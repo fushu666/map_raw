@@ -479,6 +479,9 @@ function bindUi() {
       button.setAttribute("aria-pressed", String(state.layerPrefs[key] === true));
       writeStoredJson(LAYER_PREFS_KEY, state.layerPrefs);
       syncDeferredLayers();
+      if (key === "city" && state.layerPrefs.city && state.map.getZoom() < 4) {
+        state.map.easeTo({ zoom: 4, duration: 450 });
+      }
     });
   });
 
