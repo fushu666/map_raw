@@ -7,9 +7,6 @@ const vectorSourceOrder = [
   'dlsgis_base',
   'dlsgis_his_regime_water',
   'dlsgis_his_regime',
-  'dlsgis_his_regime_spec',
-  'dlsgis_his_regime_city',
-  'dlsgis_his_regime_lonlat',
 ]
 
 const vectorGeometry = {
@@ -21,7 +18,8 @@ const vectorGeometry = {
   dlsgis_his_regime_lonlat: 'LineString,MultiLineString',
 }
 
-const rasterSourceOrder = ['dlsgis_his_terrain', 'texture']
+const rasterSourceOrder = []
+const loadSpriteForCoreMap = false
 
 function buildYearRange(from, to, step) {
   const years = []
@@ -447,12 +445,14 @@ Page({
       if (token !== this.vectorRequestToken || this.data.renderer !== 'vectorCanvas') return
       const project = makeProjector(plan.center || [106, 34], plan.zoom || 2, width, height, plan.radius || 1)
       this.loadRasterImages(canvas, plan, (rasterTiles) => {
-        this.loadSpriteAssets(canvas, () => {
+        const paint = () => {
           if (token !== this.vectorRequestToken || this.data.renderer !== 'vectorCanvas') return
           this.paintVectorBackground(ctx, width, height)
           this.drawRasterTiles(ctx, plan, rasterTiles, width, height)
           this.drawStyledVectorLayers(ctx, plan, featureTiles, project)
-        })
+        }
+        if (loadSpriteForCoreMap) this.loadSpriteAssets(canvas, paint)
+        else paint()
       })
     })
   },
