@@ -2,7 +2,7 @@ const query = new URLSearchParams(location.search);
 const STORAGE_KEY = "allhistory:lastYear";
 const VIEW_KEY = "allhistory:lastView";
 const PANEL_KEY = "allhistory:panelCollapsed";
-const TEXTURE_KEY = "allhistory:textureEnabled";
+const LAYER_PREFS_KEY = "allhistory:optionalLayers";
 const storedYear = (() => {
   try {
     return localStorage.getItem(STORAGE_KEY) || "";
@@ -28,8 +28,12 @@ const state = {
   viewSaveTimer: 0,
   deferredLayerTimer: 0,
   deferredLayerIds: [],
-  idleLayersReady: false,
-  textureEnabled: false,
+  layerPrefs: {
+    city: false,
+    spec: false,
+    lonlat: false,
+    texture: false,
+  },
 };
 
 const DEFERRED_SOURCES = new Set([
@@ -42,7 +46,19 @@ const DEFERRED_SOURCES = new Set([
 
 const HEAVY_DEFERRED_SOURCES = new Set(["texture", "dlsgis_his_terrain"]);
 const CITY_DEFERRED_SOURCES = new Set(["dlsgis_his_regime_city"]);
-const IDLE_DEFERRED_SOURCES = new Set(["dlsgis_his_regime_spec", "dlsgis_his_regime_lonlat"]);
+const SPEC_DEFERRED_SOURCES = new Set(["dlsgis_his_regime_spec"]);
+const LONLAT_DEFERRED_SOURCES = new Set(["dlsgis_his_regime_lonlat"]);
+
+function readLayerPrefs() {
+  const saved = readStoredJson(LAYER_PREFS_KEY) || {};
+  const enabledByUrl = query.get("full") === "1";
+  return {
+    city: enabledByUrl || saved.city === true,
+    spec: enabledByUrl || saved.spec === true,
+    lonlat: enabledByUrl || saved.lonlat === true,
+    texture: enabledByUrl || saved.texture === true,
+  };
+}
 
 function $(id) {
   return document.getElementById(id);
@@ -218,10 +234,11 @@ function setLayerVisibility(id, visible) {
 
 function shouldShowDeferredLayer(layer) {
   if (!layer) return false;
-  if (HEAVY_DEFERRED_SOURCES.has(layer.source)) return state.textureEnabled && state.map.getZoom() >= 3;
-  if (CITY_DEFERRED_SOURCES.has(layer.source)) return state.map.getZoom() >= 3;
-  if (IDLE_DEFERRED_SOURCES.has(layer.source)) return state.idleLayersReady;
-  return state.idleLayersReady;
+  if (HEAVY_DEFERRED_SOURCES.has(layer.source)) return state.layerPrefs.texture;
+  if (CITY_DEFERRED_SOURCES.has(layer.source)) return state.layerPrefs.city;
+  if (SPEC_DEFERRED_SOURCES.has(layer.source)) return state.layerPrefs.spec;
+  if (LONLAT_DEFERRED_SOURCES.has(layer.source)) return state.layerPrefs.lonlat;
+  return false;
 }
 
 function syncDeferredLayers() {
@@ -235,9 +252,8 @@ function revealDeferredLayers(layerIds) {
   window.clearTimeout(state.deferredLayerTimer);
   state.deferredLayerIds = layerIds;
   state.deferredLayerTimer = window.setTimeout(() => {
-    state.idleLayersReady = true;
     syncDeferredLayers();
-  }, FAST_MODE ? 1200 : 900);
+  }, FAST_MODE ? 400 : 300);
 }
 
 async function loadYear(yearInput, options = {}) {
@@ -270,7 +286,6 @@ async function loadYear(yearInput, options = {}) {
 
     window.clearTimeout(state.deferredLayerTimer);
     state.deferredLayerIds = [];
-    state.idleLayersReady = false;
     const critical = splitCriticalStyle(style);
     state.map.setStyle(critical.style);
     state.map.once("styledata", () => {
@@ -401,7 +416,6 @@ function initMap() {
   state.map.dragRotate.disable();
   state.map.touchZoomRotate.disableRotation();
   state.map.on("error", (event) => console.warn(event?.error || event));
-  state.map.on("zoomend", syncDeferredLayers);
   state.map.on("moveend", () => {
     window.clearTimeout(state.viewSaveTimer);
     state.viewSaveTimer = window.setTimeout(() => {
@@ -456,16 +470,17 @@ function bindUi() {
   $("step-size").addEventListener("change", getStepSize);
   $("step-size").addEventListener("blur", getStepSize);
 
-  state.textureEnabled = query.get("full") === "1" || readStoredJson(TEXTURE_KEY) === true;
-  const textureToggle = $("texture-toggle");
-  if (textureToggle) {
-    textureToggle.checked = state.textureEnabled;
-    textureToggle.addEventListener("change", () => {
-      state.textureEnabled = textureToggle.checked;
-      writeStoredJson(TEXTURE_KEY, state.textureEnabled);
+  state.layerPrefs = readLayerPrefs();
+  document.querySelectorAll("[data-layer-toggle]").forEach((button) => {
+    const key = button.getAttribute("data-layer-toggle");
+    button.setAttribute("aria-pressed", String(state.layerPrefs[key] === true));
+    button.addEventListener("click", () => {
+      state.layerPrefs[key] = !state.layerPrefs[key];
+      button.setAttribute("aria-pressed", String(state.layerPrefs[key] === true));
+      writeStoredJson(LAYER_PREFS_KEY, state.layerPrefs);
       syncDeferredLayers();
     });
-  }
+  });
 
   const controls = document.querySelector(".map-controls");
   const toggle = $("panel-toggle");

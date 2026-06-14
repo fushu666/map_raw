@@ -6,7 +6,7 @@
   <title>世界历史地图</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/maplibre/maplibre-gl.css">
-  <link rel="stylesheet" href="/styles.css?v=20260614g">
+  <link rel="stylesheet" href="/styles.css?v=20260614h">
 </head>
 <body class="allhistory-map">
   <div id="map"></div>
@@ -40,14 +40,16 @@
         <button type="button" id="step-next" aria-label="下一步">&rsaquo;</button>
       </div>
 
-      <label class="texture-toggle">
-        <input id="texture-toggle" type="checkbox">
-        <span>质感</span>
-      </label>
+      <div class="layer-toggles" aria-label="可选图层">
+        <button type="button" data-layer-toggle="city" aria-pressed="false">城市</button>
+        <button type="button" data-layer-toggle="spec" aria-pressed="false">专题</button>
+        <button type="button" data-layer-toggle="lonlat" aria-pressed="false">经纬</button>
+        <button type="button" data-layer-toggle="texture" aria-pressed="false">质感</button>
+      </div>
     </div>
   </section>
 
   <script src="/maplibre/maplibre-gl.js"></script>
-  <script src="/app.js?v=20260614g"></script>
+  <script src="/app.js?v=20260614h"></script>
 </body>
 </html>

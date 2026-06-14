@@ -224,20 +224,27 @@ button {
   outline: none;
 }
 
-.texture-toggle {
-  display: inline-flex;
-  align-items: center;
+.layer-toggles {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 7px;
   margin-top: 10px;
-  color: rgba(248, 241, 218, 0.78);
-  font-size: 13px;
-  user-select: none;
 }
 
-.texture-toggle input {
-  width: 16px;
-  height: 16px;
-  accent-color: #eec470;
+.layer-toggles button {
+  height: 32px;
+  padding: 0 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.07);
+  color: rgba(248, 241, 218, 0.78);
+  font-size: 13px;
+}
+
+.layer-toggles button[aria-pressed="true"] {
+  border-color: rgba(238, 196, 112, 0.52);
+  background: rgba(238, 196, 112, 0.18);
+  color: #fff7df;
 }
 
 input::-webkit-outer-spin-button,
