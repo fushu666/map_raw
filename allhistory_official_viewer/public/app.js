@@ -298,6 +298,8 @@ function tileUrlsNearViewport(style) {
   const urls = [];
   for (const source of Object.values(style.sources || {})) {
     if (!Array.isArray(source.tiles) || !source.tiles[0]) continue;
+    if (Number.isFinite(source.minzoom) && tile.z < source.minzoom) continue;
+    if (Number.isFinite(source.maxzoom) && tile.z > source.maxzoom) continue;
     for (let dx = -1; dx <= 1; dx += 1) {
       for (let dy = -1; dy <= 1; dy += 1) {
         const x = (tile.x + dx + n) % n;
