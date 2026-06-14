@@ -182,12 +182,11 @@ function originBase() {
 }
 
 function requestOrigin(req, reqUrl) {
-  if (PUBLIC_ORIGIN) return PUBLIC_ORIGIN;
   const forwardedProto = String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim();
   const forwardedHost = String(req.headers["x-forwarded-host"] || "").split(",")[0].trim();
   const proto = forwardedProto || reqUrl.protocol.replace(":", "") || "http";
   const host = forwardedHost || req.headers.host || `127.0.0.1:${PORT}`;
-  return `${proto}://${host}`;
+  return host ? `${proto}://${host}` : PUBLIC_ORIGIN || `http://127.0.0.1:${PORT}`;
 }
 
 function rewriteStyle(style, year) {
