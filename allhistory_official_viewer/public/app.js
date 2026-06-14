@@ -138,8 +138,8 @@ function updateTimelineUi(index) {
   $("timeline-count").textContent = `${clamped + 1} / ${state.timeline.length}`;
 }
 
-async function loadJson(url) {
-  const response = await fetch(url, { cache: "no-store" });
+async function loadJson(url, cacheMode = "force-cache") {
+  const response = await fetch(url, { cache: cacheMode });
   if (!response.ok) throw new Error(`${url} ${response.status}`);
   return response.json();
 }
@@ -154,7 +154,7 @@ function setLoading(isLoading) {
 
 async function loadTimeline() {
   try {
-    const json = await loadJson("/api/timeline");
+    const json = await loadJson("/api/timeline", "no-store");
     const timeline = expandOfficialTimeline(json?.data?.timeline);
     state.timelineMeta = json?.data || null;
     state.timeline = timeline.length ? timeline : FALLBACK_TIMELINE;
@@ -198,28 +198,31 @@ async function loadYear(yearInput, options = {}) {
     const style = await loadStyle(year);
     if (token !== state.loadingToken) return;
 
-    state.map.setStyle(JSON.parse(JSON.stringify(style)));
-    state.map.once("styledata", () => {
-      if (token === state.loadingToken) setStatus(`${yearIdToDisplay(year)} 正在加载瓦片`);
-    });
-    state.map.once("idle", () => {
-      if (token !== state.loadingToken) return;
+    let completed = false;
+    const completeLoad = () => {
+      if (completed || token !== state.loadingToken) return;
+      completed = true;
       setStatus(`${yearIdToDisplay(year)} 已加载`);
       rememberYear(year);
       setLoading(false);
       history.replaceState(null, "", `?year=${encodeURIComponent(yearIdToDisplay(year))}`);
       scheduleNearbyPrefetch();
+    };
+
+    state.map.setStyle(JSON.parse(JSON.stringify(style)));
+    state.map.once("styledata", () => {
+      if (token !== state.loadingToken) return;
+      setStatus(`${yearIdToDisplay(year)} 正在加载瓦片`);
+      state.map.once("render", () => window.setTimeout(completeLoad, 300));
     });
+    state.map.once("idle", completeLoad);
 
     window.setTimeout(() => {
       if (token !== state.loadingToken) return;
       if ($("status").textContent.includes("正在")) {
-        setStatus(`${yearIdToDisplay(year)} 已加载`);
-        rememberYear(year);
-        setLoading(false);
-        scheduleNearbyPrefetch();
+        completeLoad();
       }
-    }, 3500);
+    }, 1800);
   } catch (error) {
     if (token !== state.loadingToken) return;
     setLoading(false);

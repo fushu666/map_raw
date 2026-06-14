@@ -39,7 +39,7 @@ const SOURCE_ALIASES = {
 
 const cache = new Map();
 const pendingFetches = new Map();
-const CACHE_LIMIT = 600;
+const CACHE_LIMIT = Number(process.env.AH_MEMORY_CACHE_LIMIT || 5000);
 fs.mkdirSync(diskCacheDir, { recursive: true });
 
 function send(res, status, body, type = "text/plain; charset=utf-8", headers = {}) {
@@ -129,6 +129,25 @@ function writeDiskCache(rawUrl, result) {
   }
 }
 
+function getMemoryCache(key) {
+  const value = cache.get(key);
+  if (!value) return null;
+  cache.delete(key);
+  const cachedValue = { ...value, cached: "memory" };
+  delete cachedValue.fetchMs;
+  cache.set(key, cachedValue);
+  return cachedValue;
+}
+
+function setMemoryCache(key, value) {
+  if (!CACHE_LIMIT || CACHE_LIMIT < 1) return;
+  if (cache.has(key)) cache.delete(key);
+  cache.set(key, value);
+  while (cache.size > CACHE_LIMIT) {
+    cache.delete(cache.keys().next().value);
+  }
+}
+
 function safePublicPath(urlPath) {
   const rel = decodeURIComponent(urlPath === "/" ? "/index.html" : urlPath).replace(/^\/+/, "");
   const full = path.resolve(publicDir, rel);
@@ -188,46 +207,50 @@ function rewriteStyle(style, year) {
 }
 
 async function fetchRemoteBuffer(rawUrl) {
-  const signedUrl = await signCmaptileUrl(rawUrl);
-  const cached = cache.get(signedUrl);
+  const cacheKey = cacheKeyForUrl(rawUrl);
+  const cached = getMemoryCache(cacheKey);
   if (cached) return cached;
 
-  const diskCached = readDiskCache(signedUrl);
+  const diskCached = readDiskCache(rawUrl);
   if (diskCached) {
-    if (cache.size < CACHE_LIMIT) cache.set(signedUrl, diskCached);
+    setMemoryCache(cacheKey, diskCached);
     return diskCached;
   }
 
-  if (pendingFetches.has(signedUrl)) return pendingFetches.get(signedUrl);
+  if (pendingFetches.has(cacheKey)) return pendingFetches.get(cacheKey);
 
   const fetchPromise = (async () => {
-  const response = await fetch(signedUrl, {
-    headers: {
-      "User-Agent": USER_AGENT,
-      "Referer": REFERER,
-    },
-  });
-  const body = Buffer.from(await response.arrayBuffer());
-  const result = {
-    ok: response.ok,
-    status: response.status,
-    type: response.headers.get("content-type") || contentType(new URL(rawUrl).pathname),
-    body,
-    signedUrl,
-  };
+    const signedUrl = await signCmaptileUrl(rawUrl);
+    const started = Date.now();
+    const response = await fetch(signedUrl, {
+      headers: {
+        "User-Agent": USER_AGENT,
+        "Referer": REFERER,
+      },
+    });
+    const body = Buffer.from(await response.arrayBuffer());
+    const result = {
+      ok: response.ok,
+      status: response.status,
+      type: response.headers.get("content-type") || contentType(new URL(rawUrl).pathname),
+      body,
+      signedUrl,
+      cached: "miss",
+      fetchMs: Date.now() - started,
+    };
 
     if (response.ok) {
-      if (cache.size < CACHE_LIMIT) cache.set(signedUrl, result);
-      writeDiskCache(signedUrl, result);
+      setMemoryCache(cacheKey, result);
+      writeDiskCache(rawUrl, result);
     }
     return result;
   })();
 
-  pendingFetches.set(signedUrl, fetchPromise);
+  pendingFetches.set(cacheKey, fetchPromise);
   try {
     return await fetchPromise;
   } finally {
-    pendingFetches.delete(signedUrl);
+    pendingFetches.delete(cacheKey);
   }
 }
 
@@ -241,6 +264,8 @@ async function proxyRemote(res, rawUrl, typeOverride = "") {
   send(res, result.status, result.body, typeOverride || result.type, {
     "Cache-Control": result.ok ? "public, max-age=604800, immutable" : "no-store",
     "X-Upstream-Url": result.signedUrl,
+    "X-Cache": result.cached || "miss",
+    ...(Number.isFinite(result.fetchMs) ? { "Server-Timing": `upstream;dur=${result.fetchMs}` } : {}),
   });
 }
 
