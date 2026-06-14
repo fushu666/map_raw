@@ -1,4 +1,4 @@
-const { API_ORIGIN, MANIFEST_URL } = require('../../utils/config')
+const { API_ORIGIN, MANIFEST_URL, MINI_RENDERER } = require('../../utils/config')
 const { renderYear } = require('../../utils/renderers')
 const { TILE_SIZE, lonLatToTile, lonLatToWorldPixel, worldPixelToLonLat, makeProjector } = require('../../utils/geo')
 
@@ -152,9 +152,12 @@ Page({
       success: (res) => {
         const manifest = res.data || {}
         const timeline = expandOfficialTimeline(manifest.timeline)
+        // MINI_RENDERER in config is the source of truth. Lightweight mode keeps
+        // this 'snapshot' so the manifest can never re-enable vectorCanvas.
+        const renderer = MINI_RENDERER || manifest.renderer || 'snapshot'
         this.setData({
           manifest,
-          renderer: manifest.renderer || 'snapshot',
+          renderer,
           vectorCenter: manifest.defaultCenter || this.data.vectorCenter,
           vectorZoom: manifest.renderers && manifest.renderers.vectorCanvas ? manifest.renderers.vectorCanvas.initialZoom || this.data.vectorZoom : this.data.vectorZoom,
           vectorRadius: manifest.renderers && manifest.renderers.vectorCanvas ? manifest.renderers.vectorCanvas.tileRadius || this.data.vectorRadius : this.data.vectorRadius,
@@ -245,8 +248,35 @@ Page({
       patch.tilePlanUrl = this.buildVectorTilePlanUrl(yearId, this.data.vectorCenter, this.data.vectorZoom, this.data.vectorRadius)
     }
     this.setData(patch)
-    if (this.data.renderer === 'vectorCanvas') this.drawVectorCanvasBase(yearId)
-    if (patch.tilePlanUrl) this.loadTilePlan(patch.tilePlanUrl)
+    if (this.data.renderer === 'vectorCanvas') {
+      this.drawVectorCanvasBase(yearId)
+      if (patch.tilePlanUrl) this.loadTilePlan(patch.tilePlanUrl)
+    } else {
+      // Snapshot mode: arm a watchdog so the page never stays on "正在加载".
+      this.startSnapshotWatchdog(yearId)
+    }
+  },
+
+  startSnapshotWatchdog(yearId) {
+    this.snapshotToken = (this.snapshotToken || 0) + 1
+    const token = this.snapshotToken
+    if (this.snapshotTimer) clearTimeout(this.snapshotTimer)
+    this.snapshotTimer = setTimeout(() => {
+      this.snapshotTimer = null
+      if (token !== this.snapshotToken) return
+      if (this.data.yearId !== yearId) return
+      if (this.data.status !== `正在加载 ${yearId}`) return
+      console.error(`snapshot load timeout for ${yearId}: ${this.data.snapshotUrl}`)
+      this.setData({ status: `${yearId} 加载较慢，请检查网络或合法域名设置` })
+    }, 8000)
+  },
+
+  clearSnapshotWatchdog() {
+    this.snapshotToken = (this.snapshotToken || 0) + 1
+    if (this.snapshotTimer) {
+      clearTimeout(this.snapshotTimer)
+      this.snapshotTimer = null
+    }
   },
 
   buildVectorTilePlanUrl(yearId, center, zoom, radius) {
@@ -1027,13 +1057,16 @@ Page({
   },
 
   handleSnapshotLoad() {
+    this.clearSnapshotWatchdog()
     wx.stopPullDownRefresh()
     this.setData({ status: `${this.data.yearId} 已加载` })
   },
 
   handleSnapshotError() {
+    this.clearSnapshotWatchdog()
     wx.stopPullDownRefresh()
-    this.setData({ status: `${this.data.yearId} 加载失败` })
+    console.error(`snapshot load failed for ${this.data.yearId}: ${this.data.snapshotUrl}`)
+    this.setData({ status: `${this.data.yearId} 加载失败，请检查网络或合法域名设置` })
     wx.showToast({
       title: '地图加载失败',
       icon: 'none',

@@ -2,6 +2,7 @@ const query = new URLSearchParams(location.search);
 const STORAGE_KEY = "allhistory:lastYear";
 const VIEW_KEY = "allhistory:lastView";
 const PANEL_KEY = "allhistory:panelCollapsed";
+const TEXTURE_KEY = "allhistory:textureEnabled";
 const storedYear = (() => {
   try {
     return localStorage.getItem(STORAGE_KEY) || "";
@@ -26,6 +27,9 @@ const state = {
   prefetchTimer: 0,
   viewSaveTimer: 0,
   deferredLayerTimer: 0,
+  deferredLayerIds: [],
+  idleLayersReady: false,
+  textureEnabled: false,
 };
 
 const DEFERRED_SOURCES = new Set([
@@ -37,6 +41,8 @@ const DEFERRED_SOURCES = new Set([
 ]);
 
 const HEAVY_DEFERRED_SOURCES = new Set(["texture", "dlsgis_his_terrain"]);
+const CITY_DEFERRED_SOURCES = new Set(["dlsgis_his_regime_city"]);
+const IDLE_DEFERRED_SOURCES = new Set(["dlsgis_his_regime_spec", "dlsgis_his_regime_lonlat"]);
 
 function $(id) {
   return document.getElementById(id);
@@ -205,15 +211,32 @@ function splitCriticalStyle(style) {
   return { style: next, deferredLayerIds };
 }
 
+function setLayerVisibility(id, visible) {
+  if (!state.map.getLayer(id)) return;
+  state.map.setLayoutProperty(id, "visibility", visible ? "visible" : "none");
+}
+
+function shouldShowDeferredLayer(layer) {
+  if (!layer) return false;
+  if (HEAVY_DEFERRED_SOURCES.has(layer.source)) return state.textureEnabled && state.map.getZoom() >= 3;
+  if (CITY_DEFERRED_SOURCES.has(layer.source)) return state.map.getZoom() >= 3;
+  if (IDLE_DEFERRED_SOURCES.has(layer.source)) return state.idleLayersReady;
+  return state.idleLayersReady;
+}
+
+function syncDeferredLayers() {
+  for (const id of state.deferredLayerIds) {
+    const layer = state.map.getLayer(id);
+    setLayerVisibility(id, shouldShowDeferredLayer(layer));
+  }
+}
+
 function revealDeferredLayers(layerIds) {
   window.clearTimeout(state.deferredLayerTimer);
+  state.deferredLayerIds = layerIds;
   state.deferredLayerTimer = window.setTimeout(() => {
-    for (const id of layerIds) {
-      const layer = state.map.getLayer(id);
-      if (!layer) continue;
-      if (FAST_MODE && HEAVY_DEFERRED_SOURCES.has(layer.source)) continue;
-      state.map.setLayoutProperty(id, "visibility", "visible");
-    }
+    state.idleLayersReady = true;
+    syncDeferredLayers();
   }, FAST_MODE ? 1200 : 900);
 }
 
@@ -246,6 +269,8 @@ async function loadYear(yearInput, options = {}) {
     };
 
     window.clearTimeout(state.deferredLayerTimer);
+    state.deferredLayerIds = [];
+    state.idleLayersReady = false;
     const critical = splitCriticalStyle(style);
     state.map.setStyle(critical.style);
     state.map.once("styledata", () => {
@@ -376,6 +401,7 @@ function initMap() {
   state.map.dragRotate.disable();
   state.map.touchZoomRotate.disableRotation();
   state.map.on("error", (event) => console.warn(event?.error || event));
+  state.map.on("zoomend", syncDeferredLayers);
   state.map.on("moveend", () => {
     window.clearTimeout(state.viewSaveTimer);
     state.viewSaveTimer = window.setTimeout(() => {
@@ -384,6 +410,7 @@ function initMap() {
         center: [center.lng, center.lat],
         zoom: state.map.getZoom(),
       });
+      syncDeferredLayers();
       scheduleNearbyPrefetch();
     }, 250);
   });
@@ -428,6 +455,17 @@ function bindUi() {
   $("step-next").addEventListener("click", () => stepTimeline(1));
   $("step-size").addEventListener("change", getStepSize);
   $("step-size").addEventListener("blur", getStepSize);
+
+  state.textureEnabled = query.get("full") === "1" || readStoredJson(TEXTURE_KEY) === true;
+  const textureToggle = $("texture-toggle");
+  if (textureToggle) {
+    textureToggle.checked = state.textureEnabled;
+    textureToggle.addEventListener("change", () => {
+      state.textureEnabled = textureToggle.checked;
+      writeStoredJson(TEXTURE_KEY, state.textureEnabled);
+      syncDeferredLayers();
+    });
+  }
 
   const controls = document.querySelector(".map-controls");
   const toggle = $("panel-toggle");

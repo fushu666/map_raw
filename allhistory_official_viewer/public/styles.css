@@ -224,6 +224,22 @@ button {
   outline: none;
 }
 
+.texture-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 10px;
+  color: rgba(248, 241, 218, 0.78);
+  font-size: 13px;
+  user-select: none;
+}
+
+.texture-toggle input {
+  width: 16px;
+  height: 16px;
+  accent-color: #eec470;
+}
+
 input::-webkit-outer-spin-button,
 input::-webkit-inner-spin-button {
   margin: 0;
