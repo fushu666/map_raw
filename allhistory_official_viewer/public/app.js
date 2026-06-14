@@ -11,6 +11,7 @@ const storedYear = (() => {
 })();
 const DEFAULT_YEAR = query.get("year") || storedYear || "750";
 const FALLBACK_TIMELINE = buildYearRange(-3200, -1000, 50).concat(buildYearRange(-990, 1900, 1));
+const FAST_MODE = query.get("full") !== "1";
 
 let initialYear = DEFAULT_YEAR;
 
@@ -34,6 +35,8 @@ const DEFERRED_SOURCES = new Set([
   "dlsgis_his_regime_spec",
   "dlsgis_his_regime_lonlat",
 ]);
+
+const HEAVY_DEFERRED_SOURCES = new Set(["texture", "dlsgis_his_terrain"]);
 
 function $(id) {
   return document.getElementById(id);
@@ -206,10 +209,12 @@ function revealDeferredLayers(layerIds) {
   window.clearTimeout(state.deferredLayerTimer);
   state.deferredLayerTimer = window.setTimeout(() => {
     for (const id of layerIds) {
-      if (!state.map.getLayer(id)) continue;
+      const layer = state.map.getLayer(id);
+      if (!layer) continue;
+      if (FAST_MODE && HEAVY_DEFERRED_SOURCES.has(layer.source)) continue;
       state.map.setLayoutProperty(id, "visibility", "visible");
     }
-  }, 900);
+  }, FAST_MODE ? 1200 : 900);
 }
 
 async function loadYear(yearInput, options = {}) {
@@ -237,7 +242,7 @@ async function loadYear(yearInput, options = {}) {
       rememberYear(year);
       setLoading(false);
       history.replaceState(null, "", `?year=${encodeURIComponent(yearIdToDisplay(year))}`);
-      scheduleNearbyPrefetch();
+      if (!FAST_MODE) scheduleNearbyPrefetch();
     };
 
     window.clearTimeout(state.deferredLayerTimer);
@@ -268,6 +273,7 @@ async function loadYear(yearInput, options = {}) {
 }
 
 function scheduleNearbyPrefetch() {
+  if (FAST_MODE) return;
   window.clearTimeout(state.prefetchTimer);
   state.prefetchTimer = window.setTimeout(() => {
     const offsets = [-2, -1, 1, 2];
@@ -313,6 +319,7 @@ function tileUrlsNearViewport(style) {
 }
 
 async function prefetchYearNearViewport(year) {
+  if (FAST_MODE) return;
   try {
     const style = await loadStyle(year);
     const urls = tileUrlsNearViewport(style);
@@ -325,6 +332,7 @@ async function prefetchYearNearViewport(year) {
 }
 
 function scheduleInputPrefetch() {
+  if (FAST_MODE) return;
   window.clearTimeout(state.prefetchTimer);
   state.prefetchTimer = window.setTimeout(() => {
     const year = resolveAvailableYear($("year-input").value);
@@ -360,7 +368,7 @@ function initMap() {
     zoom: Number.isFinite(savedView?.zoom) ? savedView.zoom : 2,
     minZoom: 1,
     maxZoom: 9,
-    renderWorldCopies: true,
+    renderWorldCopies: false,
     attributionControl: false,
     localIdeographFontFamily: "Microsoft YaHei, SimHei, sans-serif",
   });

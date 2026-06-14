@@ -200,6 +200,12 @@ function rewriteStyle(style, year) {
     if (source.type === "raster") {
       source.tileSize ||= 256;
     }
+    if (sourceId === "texture") {
+      source.minzoom = Math.max(Number(source.minzoom) || 0, 4);
+    }
+    if (sourceId === "dlsgis_his_terrain") {
+      source.minzoom = Math.max(Number(source.minzoom) || 0, 3);
+    }
   }
 
   return next;
